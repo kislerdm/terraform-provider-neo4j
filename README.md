@@ -3,6 +3,9 @@
 The provider to provision Neo4j [Nodes](https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-node)
 and [Relationships](https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-relationship).
 
+> [!WARNING]
+> The minimal supported version of Neo4j is 5.24. 
+
 ## Using the provider
 
 ```terraform
