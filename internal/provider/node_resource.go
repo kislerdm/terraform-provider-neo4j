@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -71,10 +70,8 @@ func (n NodeResourceModel) ReadProperties(ctx context.Context) (o map[string]any
 			diags.AddError("reserved key is set as property", "uuid is reserved")
 		}
 		diags.Append(n.Properties.ElementsAs(ctx, &elements, false)...)
-
 		if !diags.HasError() {
 			o = make(map[string]any, len(elements))
-
 			for k, v := range elements {
 				if v.IsNull() {
 					diags.AddError("key is null", k)
@@ -93,6 +90,8 @@ func (n NodeResourceModel) ReadProperties(ctx context.Context) (o map[string]any
 				}
 			}
 		}
+	} else {
+		o = nil
 	}
 	if diags.HasError() {
 		o = nil
@@ -186,46 +185,61 @@ SET n += $properties
 
 func (r *NodeResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data NodeResourceModel
-
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read example, got error: %s", err))
-	//     return
-	// }
-
-	// Save updated data into Terraform state
+	props := map[string]interface{}{"uuid": data.ID.ValueString()}
+	tflog.Trace(ctx, "reading the node", props)
+	resp.Diagnostics.Append(r.read(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		tflog.Debug(ctx, "failed to reade the node", props)
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	tflog.Trace(ctx, "read the node", props)
 }
 
 func (r *NodeResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data NodeResourceModel
-
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	id := data.ID.ValueString()
+	tflog.Trace(ctx, "updating the node", map[string]interface{}{"id": id})
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update example, got error: %s", err))
-	//     return
-	// }
+	labels, diags := data.ReadLabels(ctx)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		tflog.Debug(ctx, "faulty labels provided")
+		return
+	}
 
-	// Save updated data into Terraform state
+	properties, diags := data.ReadProperties(ctx)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		tflog.Debug(ctx, "faulty properties provided")
+		return
+	}
+
+	if _, err := r.client.Run(ctx, `MATCH (n{uuid:$uuid})
+FOREACH (l in labels(n) | REMOVE n:$(l)) 
+FOREACH (l in $labels | SET n:$(l))
+SET n = {}
+SET n += $properties, n.uuid = $uuid
+`, map[string]any{"uuid": id, "labels": labels, "properties": properties}); err != nil {
+		tflog.Debug(ctx, "failed to update the node")
+		resp.Diagnostics.AddError("failed to update the node", err.Error())
+		return
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	if !resp.Diagnostics.HasError() {
+		tflog.Trace(ctx, "failed to update state")
+		return
+	}
+	tflog.Trace(ctx, "updated the node", map[string]interface{}{"id": id})
 }
 
 func (r *NodeResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -250,6 +264,67 @@ func (r *NodeResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	tflog.Trace(ctx, "deleted the node")
 }
 
-func (r *NodeResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+func (r *NodeResource) ImportState(ctx context.Context, req resource.ImportStateRequest,
+	resp *resource.ImportStateResponse) {
+	var data NodeResourceModel
+	data.ID = basetypes.NewStringValue(req.ID)
+	tflog.Trace(ctx, "importing the node", map[string]interface{}{"id": req.ID})
+	resp.Diagnostics.Append(r.read(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		tflog.Trace(ctx, "failed to import the node", map[string]interface{}{"id": req.ID})
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	if !resp.Diagnostics.HasError() {
+		tflog.Trace(ctx, "failed to import to state")
+		return
+	}
+	tflog.Trace(ctx, "imported the node", map[string]interface{}{"id": req.ID})
+}
+
+func (r *NodeResource) read(ctx context.Context, data *NodeResourceModel) (diags diag.Diagnostics) {
+	id := data.ID.ValueString()
+	if data.Labels.IsNull() || data.Labels.IsUnknown() {
+		data.Labels = types.ListNull(types.StringType)
+	}
+	if data.Properties.IsNull() || data.Properties.IsUnknown() {
+		data.Properties = types.MapNull(types.StringType)
+	}
+	dbResp, err := r.client.Run(ctx, `MATCH (n{uuid:$uuid}) RETURN n`, map[string]any{"uuid": id})
+	switch err != nil {
+	case true:
+		diags.AddError("failed to read the node", err.Error())
+	default:
+		var rec *neo4j.Record
+		if dbResp.NextRecord(ctx, &rec) {
+			node := rec.Values[0].(neo4j.Node)
+
+			var d diag.Diagnostics
+			if !(data.Labels.IsNull() && len(node.Labels) == 0) {
+				data.Labels, d = types.ListValueFrom(ctx, types.StringType, node.Labels)
+				diags.Append(d...)
+			}
+
+			if len(node.GetProperties()) > 1 {
+				var tmp = make(map[string]string, len(node.GetProperties())-1)
+				for k, v := range node.GetProperties() {
+					// Exclude the system property used to store the resource id.
+					// It's used because the private Neo4j identifier (elementId) may not be reliable
+					// beyond the scope of a single database transaction.
+					if k != "uuid" {
+						tmp[k] = fmt.Sprintf("%v", v)
+					}
+				}
+				if !(data.Properties.IsNull() && len(tmp) == 0) {
+					data.Properties, d = types.MapValueFrom(ctx, types.StringType, tmp)
+					diags.Append(d...)
+				}
+			}
+
+		} else {
+			diags.AddError("no node found", id)
+		}
+	}
+
+	return diags
 }

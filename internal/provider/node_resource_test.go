@@ -44,49 +44,176 @@ func TestAccNodeResource(t *testing.T) {
 	}
 	defer func() { _ = c.Close(ctx) }()
 
-	configInit := config{
-		resourceName:      "neo4j_node",
-		resourceTfVarName: "_",
-		WantLabels:        []string{"foo", "bar"},
-		WantProperties: map[string]any{
-			"foo":  int64(100),
-			"bar":  "qux",
-			"quux": 1.2,
-		},
-		Got:    map[string]any{"id": nil},
-		client: c,
-	}
-	resourceAddress := configInit.resourceAddress()
+	t.Run("labels+properties->properties->plain->labels->labels+properties", func(t *testing.T) {
+		configInit := config{
+			resourceName:      "neo4j_node",
+			resourceTfVarName: "_",
+			WantLabels:        []string{"foo", "bar"},
+			WantProperties: map[string]any{
+				"foo":  int64(100),
+				"bar":  "qux",
+				"quux": 1.2,
+			},
+			Got:    map[string]any{"id": nil},
+			client: c,
+		}
+		resourceAddress := configInit.resourceAddress()
 
-	configUpdate := configInit
-	configUpdate.Got = nil
-	configUpdate.WantLabels = nil
+		configNoLabels := configInit
+		configNoLabels.Got = nil
+		configNoLabels.WantLabels = nil
 
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{
-			// create initial state with labels and properties
-			{
-				Config: configInit.generateConfig(),
-				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue(
-						resourceAddress,
-						tfjsonpath.New("id"),
-						knownvalue.StringRegexp(
-							regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$`),
+		configPlain := configInit
+		configPlain.Got = nil
+		configPlain.WantLabels = nil
+		configPlain.WantProperties = nil
+
+		configNoProperties := configInit
+		configNoProperties.Got = nil
+		configNoProperties.WantProperties = nil
+
+		configEmptyLabels := configInit
+		configEmptyLabels.Got = nil
+		configEmptyLabels.WantLabels = make([]string, 0)
+
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				// Create and Read testing
+				{
+					Config: configInit.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{
+						statecheck.ExpectKnownValue(
+							resourceAddress,
+							tfjsonpath.New("id"),
+							knownvalue.StringRegexp(
+								regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$`),
+							),
 						),
-					),
-					configInit,
+						configInit,
+					},
+				},
+				// ImportState testing
+				{
+					ResourceName:      configInit.resourceAddress(),
+					ImportState:       true,
+					ImportStateVerify: true,
+				},
+				// Update and Read testing
+				{
+					Config:            configNoLabels.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{configNoLabels},
+				},
+				// ImportState testing
+				{
+					ResourceName:      configNoLabels.resourceAddress(),
+					ImportState:       true,
+					ImportStateVerify: true,
+				},
+				// Update and Read testing
+				{
+					Config:            configPlain.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{configPlain},
+				},
+				// ImportState testing
+				{
+					ResourceName:      configPlain.resourceAddress(),
+					ImportState:       true,
+					ImportStateVerify: true,
+				},
+				// Update and Read testing
+				{
+					Config:            configNoProperties.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{configNoProperties},
+				},
+				// ImportState testing
+				{
+					ResourceName:      configNoProperties.resourceAddress(),
+					ImportState:       true,
+					ImportStateVerify: true,
+				},
+				// Update and Read testing
+				{
+					Config:            configInit.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{configInit},
 				},
 			},
-		},
+		})
+
+		// Delete testing against database
+		_, err = c.Run(context.Background(),
+			`OPTIONAL MATCH (n{uuid:$uuid}) CALL apoc.util.validate(NOT n IS NULL, "node shall be deleted", [])`,
+			map[string]any{"uuid": configInit.Got["id"].(string)})
+		assert.NoError(t, err)
 	})
 
-	//	check deleted state
-	_, err = c.Run(context.Background(),
-		`OPTIONAL MATCH (n{uuid:$uuid}) CALL apoc.util.validate(NOT n IS NULL, "node shall be deleted", [])`,
-		map[string]any{"uuid": configInit.Got["id"].(string)})
-	assert.NoError(t, err)
+	t.Run("labels = [] vs labels = null", func(t *testing.T) {
+		cfg := config{
+			client:            c,
+			resourceName:      "neo4j_node",
+			resourceTfVarName: "_",
+			WantLabels:        []string{},
+			WantProperties:    map[string]any{"foo": "bar"},
+		}
+		cfgNull := cfg
+		cfgNull.WantLabels = nil
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config:            cfg.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{cfg},
+				},
+				{
+					Config:            cfgNull.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{cfgNull},
+				},
+				{
+					ResourceName:      cfgNull.resourceAddress(),
+					ImportState:       true,
+					ImportStateVerify: true,
+				},
+				{
+					Config:            cfg.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{cfg},
+				},
+			},
+		})
+	})
+
+	t.Run("properties = {} vs properties = null", func(t *testing.T) {
+		cfg := config{
+			client:            c,
+			resourceName:      "neo4j_node",
+			resourceTfVarName: "_",
+			WantLabels:        []string{"foo"},
+			WantProperties:    map[string]any{},
+		}
+		cfgNull := cfg
+		cfgNull.WantProperties = nil
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config:            cfg.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{cfg},
+				},
+				{
+					Config:            cfgNull.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{cfgNull},
+				},
+				{
+					ResourceName:      cfgNull.resourceAddress(),
+					ImportState:       true,
+					ImportStateVerify: true,
+				},
+				{
+					Config:            cfg.generateConfig(),
+					ConfigStateChecks: []statecheck.StateCheck{cfg},
+				},
+			},
+		})
+	})
 }
 
 var _ statecheck.StateCheck = config{}
@@ -103,12 +230,23 @@ type config struct {
 func (cfg config) generateConfig() string {
 	var o string
 	o += fmt.Sprintf("resource \"%s\" \"%s\" {\n", cfg.resourceName, cfg.resourceTfVarName)
-	if len(cfg.WantLabels) > 0 {
+
+	switch {
+	case cfg.WantLabels == nil:
+	case len(cfg.WantLabels) > 0:
 		o += fmt.Sprintf("labels = %s\n", newTfListConfig(cfg.WantLabels))
+	default:
+		o += "labels = []\n"
 	}
-	if len(cfg.WantProperties) > 0 {
+
+	switch {
+	case cfg.WantProperties == nil:
+	case len(cfg.WantProperties) > 0:
 		o += fmt.Sprintf("properties = %s\n", newTfMapConfig(cfg.WantProperties))
+	default:
+		o += "properties = {}\n"
 	}
+
 	o += "}"
 	return o
 }
@@ -167,7 +305,7 @@ func (cfg config) CheckState(ctx context.Context, req statecheck.CheckStateReque
 		wantLabels := slices.Clone(cfg.WantLabels)
 		slices.Sort(wantLabels)
 		if !slices.Equal(gotLabels, wantLabels) {
-			er = fmt.Errorf("lables don't match, want = %v, got = %v", wantLabels, gotLabels)
+			er = fmt.Errorf("lables don't match, want = %v, got = %v", cfg.WantLabels, gotLabels)
 		}
 
 		gotProperties := node.GetProperties()
@@ -192,7 +330,14 @@ func (cfg config) CheckState(ctx context.Context, req statecheck.CheckStateReque
 		resp.Error = err
 		return
 	}
-	wantLabels := knownvalue.ListExact(toListCheckExact(cfg.WantLabels))
+
+	var wantLabels knownvalue.Check
+	switch cfg.WantLabels == nil {
+	case true:
+		wantLabels = knownvalue.Null()
+	default:
+		wantLabels = knownvalue.ListExact(toListCheckExact(cfg.WantLabels))
+	}
 	if err := wantLabels.CheckValue(gotLabels); err != nil {
 		resp.Error = fmt.Errorf("lables don't match, want = %v, got = %v: %w", cfg.WantLabels, gotLabels, err)
 		return
@@ -203,7 +348,14 @@ func (cfg config) CheckState(ctx context.Context, req statecheck.CheckStateReque
 		resp.Error = err
 		return
 	}
-	wantProperties := knownvalue.MapExact(toMapCheckExact(cfg.WantProperties))
+
+	var wantProperties knownvalue.Check
+	switch cfg.WantProperties == nil {
+	case true:
+		wantProperties = knownvalue.Null()
+	default:
+		wantProperties = knownvalue.MapExact(toMapCheckExact(cfg.WantProperties))
+	}
 	if err := wantProperties.CheckValue(gotProperties); err != nil {
 		resp.Error = fmt.Errorf("properties don't match, want = %v, got = %v: %w", cfg.WantProperties,
 			gotProperties, err)
