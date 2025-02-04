@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAccNodeResource(t *testing.T) {
@@ -31,138 +32,97 @@ func TestAccNodeResource(t *testing.T) {
 		t.Setenv("DB_USER", "")
 	})
 
-	t.Run("labels and properties", func(t *testing.T) {
-		wantProperties := map[string]any{
+	ctx := context.Background()
+	c, err := NewClient(ctx, ModelProvider{
+		DatabaseURI:      types.StringValue(testDbURI),
+		DatabaseUser:     types.StringValue(testDBUser),
+		DatabasePassword: types.StringValue(testDBPass),
+	})
+	if err != nil {
+		t.Errorf("could not conenct to database: %v\n", err)
+		return
+	}
+	defer func() { _ = c.Close(ctx) }()
+
+	configInit := config{
+		resourceName:      "neo4j_node",
+		resourceTfVarName: "_",
+		WantLabels:        []string{"foo", "bar"},
+		WantProperties: map[string]any{
 			"foo":  int64(100),
 			"bar":  "qux",
 			"quux": 1.2,
-		}
-		wantLabels := []string{"foo", "bar"}
-		config := fmt.Sprintf(`resource "neo4j_node" "_" {
-	labels 	   = %s
-	properties = %s
-}`, newTfListConfig(wantLabels), newTfMapConfig(wantProperties))
-		resource.UnitTest(t, resource.TestCase{
-			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-			Steps: []resource.TestStep{
-				{
-					Config: config,
-					ConfigStateChecks: []statecheck.StateCheck{
-						statecheck.ExpectKnownValue(
-							"neo4j_node._",
-							tfjsonpath.New("id"),
-							knownvalue.StringRegexp(
-								regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$`),
-							),
+		},
+		Got:    map[string]any{"id": nil},
+		client: c,
+	}
+	resourceAddress := configInit.resourceAddress()
+
+	configUpdate := configInit
+	configUpdate.Got = nil
+	configUpdate.WantLabels = nil
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// create initial state with labels and properties
+			{
+				Config: configInit.generateConfig(),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						resourceAddress,
+						tfjsonpath.New("id"),
+						knownvalue.StringRegexp(
+							regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$`),
 						),
-						statecheck.ExpectKnownValue("neo4j_node._",
-							tfjsonpath.New("labels"),
-							knownvalue.ListExact(toListCheck(wantLabels)),
-						),
-						statecheck.ExpectKnownValue("neo4j_node._",
-							tfjsonpath.New("properties"),
-							knownvalue.MapExact(toMapCheck(wantProperties)),
-						),
-						checkNodeInDatabase{
-							resourceAddress: "neo4j_node._",
-							Labels:          wantLabels,
-							Properties:      wantProperties,
-						},
-					},
+					),
+					configInit,
 				},
 			},
-		})
+		},
 	})
 
-	t.Run("labels without properties", func(t *testing.T) {
-		wantProperties := map[string]any{}
-		wantLabels := []string{"foo", "bar"}
-		config := fmt.Sprintf(`resource "neo4j_node" "_" {
-	labels = %s
-}`, newTfListConfig(wantLabels))
-		resource.UnitTest(t, resource.TestCase{
-			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-			Steps: []resource.TestStep{
-				{
-					Config: config,
-					ConfigStateChecks: []statecheck.StateCheck{
-						statecheck.ExpectKnownValue(
-							"neo4j_node._",
-							tfjsonpath.New("id"),
-							knownvalue.StringRegexp(
-								regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$`),
-							),
-						),
-						statecheck.ExpectKnownValue("neo4j_node._",
-							tfjsonpath.New("labels"),
-							knownvalue.ListExact(toListCheck(wantLabels)),
-						),
-						statecheck.ExpectKnownValue("neo4j_node._",
-							tfjsonpath.New("properties"),
-							knownvalue.Null(),
-						),
-						checkNodeInDatabase{
-							resourceAddress: "neo4j_node._",
-							Labels:          wantLabels,
-							Properties:      wantProperties,
-						},
-					},
-				},
-			},
-		})
-	})
-
-	t.Run("properties without labels", func(t *testing.T) {
-		wantProperties := map[string]any{
-			"foo":  int64(100),
-			"bar":  "qux",
-			"quux": 1.2,
-		}
-		config := fmt.Sprintf(`resource "neo4j_node" "_" {
-	properties = %s
-}`, newTfMapConfig(wantProperties))
-		resource.UnitTest(t, resource.TestCase{
-			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-			Steps: []resource.TestStep{
-				{
-					Config: config,
-					ConfigStateChecks: []statecheck.StateCheck{
-						statecheck.ExpectKnownValue(
-							"neo4j_node._",
-							tfjsonpath.New("id"),
-							knownvalue.StringRegexp(
-								regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$`),
-							),
-						),
-						statecheck.ExpectKnownValue("neo4j_node._",
-							tfjsonpath.New("labels"),
-							knownvalue.Null(),
-						),
-						statecheck.ExpectKnownValue("neo4j_node._",
-							tfjsonpath.New("properties"),
-							knownvalue.MapExact(toMapCheck(wantProperties)),
-						),
-						checkNodeInDatabase{
-							resourceAddress: "neo4j_node._",
-							Properties:      wantProperties,
-						},
-					},
-				},
-			},
-		})
-	})
+	//	check deleted state
+	_, err = c.Run(context.Background(),
+		`OPTIONAL MATCH (n{uuid:$uuid}) CALL apoc.util.validate(NOT n IS NULL, "node shall be deleted", [])`,
+		map[string]any{"uuid": configInit.Got["id"].(string)})
+	assert.NoError(t, err)
 }
 
-var _ statecheck.StateCheck = checkNodeInDatabase{}
+var _ statecheck.StateCheck = config{}
 
-type checkNodeInDatabase struct {
-	resourceAddress string
-	Labels          []string
-	Properties      map[string]any
+type config struct {
+	client            neo4j.SessionWithContext
+	resourceName      string
+	resourceTfVarName string
+	WantLabels        []string
+	WantProperties    map[string]any
+	Got               map[string]any
 }
 
-func (v checkNodeInDatabase) CheckState(ctx context.Context, req statecheck.CheckStateRequest,
+func (cfg config) generateConfig() string {
+	var o string
+	o += fmt.Sprintf("resource \"%s\" \"%s\" {\n", cfg.resourceName, cfg.resourceTfVarName)
+	if len(cfg.WantLabels) > 0 {
+		o += fmt.Sprintf("labels = %s\n", newTfListConfig(cfg.WantLabels))
+	}
+	if len(cfg.WantProperties) > 0 {
+		o += fmt.Sprintf("properties = %s\n", newTfMapConfig(cfg.WantProperties))
+	}
+	o += "}"
+	return o
+}
+
+func (cfg config) resourceAddress() string {
+	return cfg.resourceName + "." + cfg.resourceTfVarName
+}
+
+func (cfg config) CheckState(ctx context.Context, req statecheck.CheckStateRequest,
 	resp *statecheck.CheckStateResponse) {
+	if req.State == nil {
+		resp.Error = fmt.Errorf("state is nil")
+		return
+	}
 	if req.State.Values == nil {
 		resp.Error = fmt.Errorf("state does not contain any state values")
 		return
@@ -172,34 +132,25 @@ func (v checkNodeInDatabase) CheckState(ctx context.Context, req statecheck.Chec
 		return
 	}
 
-	c, err := NewClient(ctx, ModelProvider{
-		DatabaseURI:      types.StringValue(testDbURI),
-		DatabaseUser:     types.StringValue(testDBUser),
-		DatabasePassword: types.StringValue(testDBPass),
-	})
-	if err != nil {
-		resp.Error = err
-		return
-	}
-	defer func() { _ = c.Close(ctx) }()
-
 	var res *tfjson.StateResource
 	for _, r := range req.State.Values.RootModule.Resources {
-		if v.resourceAddress == r.Address {
+		if cfg.resourceAddress() == r.Address {
 			res = r
+			break
 		}
 	}
 	if res == nil {
-		resp.Error = fmt.Errorf("id attribute not found")
+		resp.Error = fmt.Errorf("%s - Resource not found in state", cfg.resourceAddress())
 		return
 	}
+
 	id, err := tfjsonpath.Traverse(res.AttributeValues, tfjsonpath.New("id"))
 	if err != nil {
 		resp.Error = err
 		return
 	}
 
-	r, err := c.Run(ctx, `MATCH (n{uuid:$uuid}) RETURN n`, map[string]any{"uuid": id.(string)})
+	r, err := cfg.client.Run(ctx, `MATCH (n{uuid:$uuid}) RETURN n`, map[string]any{"uuid": id.(string)})
 	if err != nil {
 		resp.Error = err
 		return
@@ -212,27 +163,59 @@ func (v checkNodeInDatabase) CheckState(ctx context.Context, req statecheck.Chec
 
 		gotLabels := node.Labels
 		slices.Sort(gotLabels)
-		slices.Sort(v.Labels)
-		if !slices.Equal(gotLabels, v.Labels) {
-			er = fmt.Errorf("lables don't match, want = %v, got = %v", v.Labels, gotLabels)
+
+		wantLabels := slices.Clone(cfg.WantLabels)
+		slices.Sort(wantLabels)
+		if !slices.Equal(gotLabels, wantLabels) {
+			er = fmt.Errorf("lables don't match, want = %v, got = %v", wantLabels, gotLabels)
 		}
 
 		gotProperties := node.GetProperties()
 		// remove system attribute
 		delete(gotProperties, "uuid")
-		if !maps.Equal(v.Properties, gotProperties) {
+		if !maps.Equal(cfg.WantProperties, gotProperties) {
 			er = errors.Join(er,
-				fmt.Errorf("properties don't match, want = %v, got = %v", v.Properties, gotProperties))
+				fmt.Errorf("properties don't match, want = %v, got = %v", cfg.WantProperties, gotProperties))
 		}
 
 		resp.Error = er
-
 	} else {
 		resp.Error = fmt.Errorf("no node with id %v found", id)
 	}
+
+	if resp.Error != nil {
+		return
+	}
+
+	gotLabels, err := tfjsonpath.Traverse(res.AttributeValues, tfjsonpath.New("labels"))
+	if err != nil {
+		resp.Error = err
+		return
+	}
+	wantLabels := knownvalue.ListExact(toListCheckExact(cfg.WantLabels))
+	if err := wantLabels.CheckValue(gotLabels); err != nil {
+		resp.Error = fmt.Errorf("lables don't match, want = %v, got = %v: %w", cfg.WantLabels, gotLabels, err)
+		return
+	}
+
+	gotProperties, err := tfjsonpath.Traverse(res.AttributeValues, tfjsonpath.New("properties"))
+	if err != nil {
+		resp.Error = err
+		return
+	}
+	wantProperties := knownvalue.MapExact(toMapCheckExact(cfg.WantProperties))
+	if err := wantProperties.CheckValue(gotProperties); err != nil {
+		resp.Error = fmt.Errorf("properties don't match, want = %v, got = %v: %w", cfg.WantProperties,
+			gotProperties, err)
+		return
+	}
+
+	for k := range cfg.Got {
+		cfg.Got[k], _ = tfjsonpath.Traverse(res.AttributeValues, tfjsonpath.New(k))
+	}
 }
 
-func toMapCheck(m map[string]any) map[string]knownvalue.Check {
+func toMapCheckExact(m map[string]any) map[string]knownvalue.Check {
 	var o = make(map[string]knownvalue.Check, len(m))
 	for k, v := range m {
 		o[k] = knownvalue.StringExact(fmt.Sprintf("%v", v))
@@ -240,7 +223,7 @@ func toMapCheck(m map[string]any) map[string]knownvalue.Check {
 	return o
 }
 
-func toListCheck(v []string) []knownvalue.Check {
+func toListCheckExact(v []string) []knownvalue.Check {
 	var o = make([]knownvalue.Check, len(v))
 	for i, vv := range v {
 		o[i] = knownvalue.StringExact(vv)
@@ -285,7 +268,7 @@ func newTfMapConfig(m map[string]any) string {
 		o.WriteString("\n")
 	}
 
-	o.WriteString("\n}")
+	o.WriteString("}")
 
 	return o.String()
 }

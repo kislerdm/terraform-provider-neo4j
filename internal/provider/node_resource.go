@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -229,21 +230,24 @@ func (r *NodeResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 func (r *NodeResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data NodeResourceModel
-
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete example, got error: %s", err))
-	//     return
-	// }
+	tflog.Trace(ctx, "delete the node")
+	if _, err := r.client.Run(ctx,
+		`MATCH (n{uuid:$uuid}) DETACH DELETE n`,
+		map[string]any{"uuid": data.ID.ValueString()},
+	); err != nil {
+		tflog.Debug(ctx, "failed to delete the node")
+		resp.Diagnostics.AddError("failed to delete the node", err.Error())
+		return
+	}
+	data.ID = types.StringNull()
+	data.Labels = types.ListNull(basetypes.StringType{})
+	data.Properties = types.MapNull(basetypes.StringType{})
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	tflog.Trace(ctx, "deleted the node")
 }
 
 func (r *NodeResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
