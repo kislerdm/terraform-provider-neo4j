@@ -3,12 +3,14 @@
 page_title: "neo4j Provider"
 subcategory: ""
 description: |-
-  
+  Terraform provider to manage Neo4j resources.
+  !> The minimal supported version of Neo4j is 5.24.
 ---
 
 # neo4j Provider
 
-
+Terraform provider to manage Neo4j resources.
+!> The minimal supported version of Neo4j is 5.24.
 
 ## Example Usage
 

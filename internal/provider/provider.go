@@ -53,6 +53,8 @@ func (p *Provider) Metadata(_ context.Context, _ provider.MetadataRequest, resp 
 
 func (p *Provider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		MarkdownDescription: `Terraform provider to manage Neo4j resources.
+!> The minimal supported version of Neo4j is 5.24.`,
 		Attributes: map[string]schema.Attribute{
 			"db_uri": schema.StringAttribute{
 				MarkdownDescription: "Database access URI.",
