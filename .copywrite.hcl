@@ -3,7 +3,7 @@ schema_version = 1
 project {
   license          = "MPL-2.0"
   copyright_year   = 2025
-  copyright_holder = "HashiCorp, Inc.\nDmitry Kisler"
+  copyright_holder = "HashiCorp, Inc.\nCopyright (c) Dmitry Kisler"
 
   header_ignore = [
     # examples used within documentation (prose)
