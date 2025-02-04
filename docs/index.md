@@ -4,13 +4,14 @@ page_title: "neo4j Provider"
 subcategory: ""
 description: |-
   Terraform provider to manage Neo4j resources.
-  !> The minimal supported version of Neo4j is 5.24.
+  !>Warning The minimal supported version of Neo4j is 5.24.
 ---
 
 # neo4j Provider
 
 Terraform provider to manage Neo4j resources.
-!> The minimal supported version of Neo4j is 5.24.
+
+!>**Warning** The minimal supported version of Neo4j is 5.24.
 
 ## Example Usage
 
@@ -31,7 +32,7 @@ provider "neo4j" {}
 
 ### Optional
 
-- `db_name` (String) The database name.
-- `db_password` (String) The user password to authenticated with the database.
-- `db_uri` (String) Database access URI.
-- `db_user` (String) The admin username to authenticated with the database.
+- `db_name` (String) The database name. Alternatively, set the environment variable `DB_NAME`.
+- `db_password` (String) The user password to authenticated with the database. Alternatively, set the environment variable `DB_PASSWORD`.
+- `db_uri` (String) Database access URI. Alternatively, set the environment variable `DB_URI`.
+- `db_user` (String) The admin username to authenticated with the database. Alternatively, set the environment variable `DB_USER`.

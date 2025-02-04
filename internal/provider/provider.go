@@ -54,23 +54,28 @@ func (p *Provider) Metadata(_ context.Context, _ provider.MetadataRequest, resp 
 func (p *Provider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: `Terraform provider to manage Neo4j resources.
-!> The minimal supported version of Neo4j is 5.24.`,
+
+!>**Warning** The minimal supported version of Neo4j is 5.24.`,
 		Attributes: map[string]schema.Attribute{
 			"db_uri": schema.StringAttribute{
-				MarkdownDescription: "Database access URI.",
-				Optional:            true,
+				MarkdownDescription: "Database access URI. " +
+					"Alternatively, set the environment variable `DB_URI`.",
+				Optional: true,
 			},
 			"db_user": schema.StringAttribute{
-				MarkdownDescription: "The admin username to authenticated with the database.",
-				Optional:            true,
+				MarkdownDescription: "The admin username to authenticated with the database. " +
+					"Alternatively, set the environment variable `DB_USER`.",
+				Optional: true,
 			},
 			"db_password": schema.StringAttribute{
-				MarkdownDescription: "The user password to authenticated with the database.",
-				Optional:            true,
+				MarkdownDescription: "The user password to authenticated with the database. " +
+					"Alternatively, set the environment variable `DB_PASSWORD`.",
+				Optional: true,
 			},
 			"db_name": schema.StringAttribute{
-				MarkdownDescription: "The database name.",
-				Optional:            true,
+				MarkdownDescription: "The database name. " +
+					"Alternatively, set the environment variable `DB_NAME`.",
+				Optional: true,
 			},
 		},
 	}
