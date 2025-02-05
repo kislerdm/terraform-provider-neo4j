@@ -3,12 +3,12 @@
 page_title: "neo4j_node Resource - terraform-provider-neo4j"
 subcategory: ""
 description: |-
-  Neo4j Node.
+  Neo4j Node, details: https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-node
 ---
 
 # neo4j_node (Resource)
 
-Neo4j Node.
+Neo4j Node, details: https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-node
 
 ## Example Usage
 

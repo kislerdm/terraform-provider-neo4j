@@ -45,8 +45,7 @@ func TestAccNodeResource(t *testing.T) {
 	defer func() { _ = c.Close(ctx) }()
 
 	t.Run("labels+properties->properties->plain->labels->labels+properties", func(t *testing.T) {
-		configInit := config{
-			resourceName:      "neo4j_node",
+		configInit := configNode{
 			resourceTfVarName: "_",
 			WantLabels:        []string{"foo", "bar"},
 			WantProperties: map[string]any{
@@ -148,9 +147,8 @@ func TestAccNodeResource(t *testing.T) {
 	})
 
 	t.Run("labels = [] vs labels = null", func(t *testing.T) {
-		cfg := config{
+		cfg := configNode{
 			client:            c,
-			resourceName:      "neo4j_node",
 			resourceTfVarName: "_",
 			WantLabels:        []string{},
 			WantProperties:    map[string]any{"foo": "bar"},
@@ -182,9 +180,8 @@ func TestAccNodeResource(t *testing.T) {
 	})
 
 	t.Run("properties = {} vs properties = null", func(t *testing.T) {
-		cfg := config{
+		cfg := configNode{
 			client:            c,
-			resourceName:      "neo4j_node",
 			resourceTfVarName: "_",
 			WantLabels:        []string{"foo"},
 			WantProperties:    map[string]any{},
@@ -216,20 +213,21 @@ func TestAccNodeResource(t *testing.T) {
 	})
 }
 
-var _ statecheck.StateCheck = config{}
+var _ statecheck.StateCheck = configNode{}
 
-type config struct {
+type configNode struct {
 	client            neo4j.SessionWithContext
-	resourceName      string
 	resourceTfVarName string
 	WantLabels        []string
 	WantProperties    map[string]any
 	Got               map[string]any
 }
 
-func (cfg config) generateConfig() string {
+const resourceNodeName = Name + nodeSuffix
+
+func (cfg configNode) generateConfig() string {
 	var o string
-	o += fmt.Sprintf("resource \"%s\" \"%s\" {\n", cfg.resourceName, cfg.resourceTfVarName)
+	o += fmt.Sprintf("resource \"%s\" \"%s\" {\n", resourceNodeName, cfg.resourceTfVarName)
 
 	switch {
 	case cfg.WantLabels == nil:
@@ -251,11 +249,11 @@ func (cfg config) generateConfig() string {
 	return o
 }
 
-func (cfg config) resourceAddress() string {
-	return cfg.resourceName + "." + cfg.resourceTfVarName
+func (cfg configNode) resourceAddress() string {
+	return resourceNodeName + "." + cfg.resourceTfVarName
 }
 
-func (cfg config) CheckState(ctx context.Context, req statecheck.CheckStateRequest,
+func (cfg configNode) CheckState(ctx context.Context, req statecheck.CheckStateRequest,
 	resp *statecheck.CheckStateResponse) {
 	if req.State == nil {
 		resp.Error = fmt.Errorf("state is nil")

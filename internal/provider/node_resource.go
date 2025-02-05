@@ -63,13 +63,13 @@ func (n NodeResourceModel) ReadLabels(ctx context.Context) (o []string, diags di
 	return o, diags
 }
 
-func (n NodeResourceModel) ReadProperties(ctx context.Context) (o map[string]any, diags diag.Diagnostics) {
-	if !n.Properties.IsNull() && !n.Properties.IsUnknown() {
-		elements := make(map[string]types.String, len(n.Properties.Elements()))
+func readProperties(ctx context.Context, props types.Map) (o map[string]any, diags diag.Diagnostics) {
+	if !props.IsNull() && !props.IsUnknown() {
+		elements := make(map[string]types.String, len(props.Elements()))
 		if _, ok := elements["uuid"]; ok {
 			diags.AddError("reserved key is set as property", "uuid is reserved")
 		}
-		diags.Append(n.Properties.ElementsAs(ctx, &elements, false)...)
+		diags.Append(props.ElementsAs(ctx, &elements, false)...)
 		if !diags.HasError() {
 			o = make(map[string]any, len(elements))
 			for k, v := range elements {
@@ -99,19 +99,17 @@ func (n NodeResourceModel) ReadProperties(ctx context.Context) (o map[string]any
 	return o, diags
 }
 
+const nodeSuffix = "_node"
+
 func (r *NodeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_node"
+	resp.TypeName = req.ProviderTypeName + nodeSuffix
 }
 
 func (r *NodeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Neo4j Node.",
+		MarkdownDescription: "Neo4j Node, details: " +
+			"https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-node",
 		Attributes: map[string]schema.Attribute{
-			"labels": schema.ListAttribute{
-				MarkdownDescription: "Node labels, details: https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-labels",
-				Optional:            true,
-				ElementType:         types.StringType,
-			},
 			"id": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Node unique identifier.",
@@ -119,10 +117,17 @@ func (r *NodeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"labels": schema.ListAttribute{
+				MarkdownDescription: "Node labels, details: " +
+					"https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-labels",
+				Optional:    true,
+				ElementType: types.StringType,
+			},
 			"properties": schema.MapAttribute{
-				MarkdownDescription: "Node properties, details: https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-properties",
-				Optional:            true,
-				ElementType:         types.StringType,
+				MarkdownDescription: "Node properties, details: " +
+					"https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/#graphdb-properties",
+				Optional:    true,
+				ElementType: types.StringType,
 			},
 		},
 	}
@@ -162,7 +167,7 @@ func (r *NodeResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	properties, diags := data.ReadProperties(ctx)
+	properties, diags := readProperties(ctx, data.Properties)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		tflog.Debug(ctx, "faulty properties provided")
@@ -216,7 +221,7 @@ func (r *NodeResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	properties, diags := data.ReadProperties(ctx)
+	properties, diags := readProperties(ctx, data.Properties)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		tflog.Debug(ctx, "faulty properties provided")
