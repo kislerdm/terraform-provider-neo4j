@@ -148,6 +148,7 @@ func tryConnection(ctx context.Context, driver neo4j.DriverWithContext, maxAttem
 func (p *Provider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewNodeResource,
+		NewRelationshipResource,
 	}
 }
 
